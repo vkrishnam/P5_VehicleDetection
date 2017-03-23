@@ -33,30 +33,41 @@ import pickle
 with open("model.pickle", "rb") as f:
     (svc,X_scaler) = pickle.load(f)
 
-def find_vehicles_in_image(image, no_vis=True):
 
+prev_bboxes = []
+
+def find_vehicles_in_image(image, no_vis=True):
+    global prev_bboxes
     bboxes = []
-    out_img, bboxes = find_cars(image, 400, 600, 1.0, svc, X_scaler, orient, pix_per_cell, cell_per_block, (spatial, spatial),
-                    histbin, bboxes=bboxes)
-    out_img, bboxes = find_cars(image, 400, 550, 1.5, svc, X_scaler, orient, pix_per_cell, cell_per_block, (spatial, spatial),
-                    histbin, bboxes=bboxes)
-    out_img, bboxes = find_cars(image, 400, 500, 2.0, svc, X_scaler, orient, pix_per_cell, cell_per_block, (spatial, spatial),
-                    histbin, bboxes=bboxes)
+    #Medium Cars
+    out_img1, bboxes = find_cars(image, 410, 530, 1.5, svc, X_scaler, orient, pix_per_cell, cell_per_block, (spatial, spatial),
+                    histbin, bboxes=bboxes, cells_per_step = 1)
+    #Small Cars
+    out_img2, bboxes = find_cars(image, 390, 440, 0.25, svc, X_scaler, orient, pix_per_cell, cell_per_block, (spatial, spatial),
+                    histbin, bboxes=bboxes, cells_per_step = 2)
+    #out_img, bboxes = find_cars(image, 400, 500, 0.5, svc, X_scaler, orient, pix_per_cell, cell_per_block, (spatial, spatial),
+    #                histbin, bboxes=bboxes)
 
     heat = np.zeros_like(image[:,:,0]).astype(np.float)
 
+    #Consider the detections from the previous frame too
+    #for bbox in prev_bboxes:
+    #    bboxes.append(bbox)
+
     # Add heat to each box in box list
-    heat = add_heat(heat,bboxes)
+    heat_img = add_heat(heat,bboxes)
+    heat_img = add_heat(heat_img,prev_bboxes)
 
     # Apply threshold to help remove false positives
-    heat = apply_threshold(heat,2)
+    heat = apply_threshold(heat_img,2)
 
     # Visualize the heatmap when displaying
     heatmap = np.clip(heat, 0, 255)
 
     # Find final boxes from heatmap using label function
     labels = label(heatmap)
-    draw_img = draw_labeled_bboxes(np.copy(image), labels)
+    draw_img, bboxes = draw_labeled_bboxes(np.copy(image), labels)
+    prev_bboxes = bboxes
 
     if no_vis is False:
         fig = plt.figure()
@@ -70,6 +81,7 @@ def find_vehicles_in_image(image, no_vis=True):
 
     #return draw_boxes(image, bboxes)
     #return out_img
+    #return heat_img
     return draw_img
 
 #process the video file
