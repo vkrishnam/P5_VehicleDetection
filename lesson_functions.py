@@ -261,7 +261,7 @@ def search_windows(img, windows, clf, scaler, color_space='RGB',
     return on_windows
 
 # Define a single function that can extract features using hog sub-sampling and make predictions
-def find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins, bboxes = [], cells_per_step = 1):
+def find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins, bboxes = [], cells_per_step = 1, window = 64):
 
     draw_img = np.copy(img)
     #img = img.astype(np.float32)/255
@@ -282,7 +282,7 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, ce
     nyblocks = (ch1.shape[0] // pix_per_cell)-1
     nfeat_per_block = orient*cell_per_block**2
     # 64 was the orginal sampling rate, with 8 cells and 8 pix per cell
-    window = 64
+    #window = 64
     nblocks_per_window = (window // pix_per_cell)-1
     #cells_per_step = 1  # Instead of overlap, define how many cells to step
     nxsteps = (nxblocks - nblocks_per_window) // cells_per_step

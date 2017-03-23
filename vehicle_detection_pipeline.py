@@ -41,7 +41,7 @@ def find_vehicles_in_image(image, no_vis=True):
     bboxes = []
     #Medium Cars
     out_img1, bboxes = find_cars(image, 410, 530, 1.5, svc, X_scaler, orient, pix_per_cell, cell_per_block, (spatial, spatial),
-                    histbin, bboxes=bboxes, cells_per_step = 1)
+                    histbin, bboxes=bboxes, cells_per_step = 1, window=64)
     #Small Cars
     out_img2, bboxes = find_cars(image, 390, 440, 0.25, svc, X_scaler, orient, pix_per_cell, cell_per_block, (spatial, spatial),
                     histbin, bboxes=bboxes, cells_per_step = 2)
