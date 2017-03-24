@@ -39,7 +39,7 @@ noncars = [item for sublist in noncar_image_list for item in sublist]
 
 ### DONE: Tweak these parameters and see how the results change.
 colorspace = 'YUV' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
-spatial = 16
+spatial = 32
 histbin = 32
 orient = 9
 pix_per_cell = 16
@@ -53,8 +53,8 @@ sample_size = min(len(cars), len(noncars))
 start_idx = 0
 #print(len(cars))
 #print(len(noncars))
-cars = cars[start_idx:start_idx+sample_size]
-notcars = noncars[start_idx:start_idx+sample_size]
+cars = cars#[start_idx:start_idx+sample_size]
+notcars = noncars#[start_idx:start_idx+sample_size]
 
 #print(cars)
 #print(notcars)
@@ -105,7 +105,7 @@ y = np.hstack((np.ones(len(car_features)), np.zeros(len(notcar_features))))
 # Split up data into randomized training and test sets
 rand_state = np.random.randint(0, 100)
 X_train, X_test, y_train, y_test = train_test_split(
-    scaled_X, y, test_size=0.2, random_state=rand_state)
+    scaled_X, y, test_size=0.3, random_state=rand_state)
 
 print('Using:',orient,'orientations',pix_per_cell,
     'pixels per cell and', cell_per_block,'cells per block')

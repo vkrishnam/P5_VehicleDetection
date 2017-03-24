@@ -92,7 +92,17 @@ def single_img_features(img, color_space='RGB', spatial_size=(32, 32),
     #9) Return concatenated array of features
     return np.concatenate(img_features)
 
+def rotate(image, angle, center = None, scale = 1.0):
+    (h, w) = image.shape[:2]
 
+    if center is None:
+        center = (w / 2, h / 2)
+
+    # Perform the rotation
+    M = cv2.getRotationMatrix2D(center, angle, scale)
+    rotated = cv2.warpAffine(image, M, (w, h))
+
+    return rotated
 
 # Define a function to extract features from a list of images
 # Have this function call bin_spatial() and color_hist()
@@ -143,6 +153,34 @@ def extract_features(imgs, color_space='RGB', spatial_size=(32, 32),
             # Append the new feature vector to the features list
             file_features.append(hog_features)
         features.append(np.concatenate(file_features))
+
+        # add data augmentation by adding noise
+        file_features = []
+        feature_image = rotate(feature_image, 270)
+        if spatial_feat == True:
+            spatial_features = bin_spatial(feature_image, size=spatial_size)
+            file_features.append(spatial_features)
+        if hist_feat == True:
+            # Apply color_hist()
+            hist_features = color_hist(feature_image, nbins=hist_bins)
+            file_features.append(hist_features)
+        if hog_feat == True:
+        # Call get_hog_features() with vis=False, feature_vec=True
+            if hog_channel == 'ALL':
+                hog_features = []
+                for channel in range(feature_image.shape[2]):
+                    hog_features.append(get_hog_features(feature_image[:,:,channel],
+                                        orient, pix_per_cell, cell_per_block,
+                                        vis=False, feature_vec=True))
+                hog_features = np.ravel(hog_features)
+            else:
+                hog_features = get_hog_features(feature_image[:,:,hog_channel], orient,
+                            pix_per_cell, cell_per_block, vis=False, feature_vec=True)
+            # Append the new feature vector to the features list
+            file_features.append(hog_features)
+        features.append(np.concatenate(file_features))
+
+
         # add data augmentation by adding noise
         file_features = []
         feature_image = cv2.GaussianBlur(feature_image, (3, 3), 0)
@@ -261,12 +299,12 @@ def search_windows(img, windows, clf, scaler, color_space='RGB',
     return on_windows
 
 # Define a single function that can extract features using hog sub-sampling and make predictions
-def find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins, bboxes = [], cells_per_step = 1, window = 64):
+def find_cars(img, ystart, ystop, xstart, xstop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins, bboxes = [], cells_per_step = 1, window = 64):
 
     draw_img = np.copy(img)
     #img = img.astype(np.float32)/255
 
-    img_tosearch = img[ystart:ystop,:,:]
+    img_tosearch = img[ystart:ystop,xstart:xstop,:]
     #ctrans_tosearch = convert_color(img_tosearch, conv='RGB2YCrCb')
     ctrans_tosearch = cv2.cvtColor(img_tosearch, cv2.COLOR_RGB2YUV)
     if scale != 1:
@@ -293,7 +331,7 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, ce
     hog2 = get_hog_features(ch2, orient, pix_per_cell, cell_per_block, feature_vec=False)
     hog3 = get_hog_features(ch3, orient, pix_per_cell, cell_per_block, feature_vec=False)
 
-    cv2.rectangle(draw_img,(0, ystart),(draw_img.shape[1], ystop),(255,0,0),2)
+    cv2.rectangle(draw_img,(xstart, ystart),(xstop, ystop),(255,0,0),2)
     #print(nxsteps, nysteps)
 
     for xb in range(nxsteps):
@@ -331,7 +369,7 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, ce
                 ytop_draw = np.int(ytop*scale)
                 win_draw = np.int(window*scale)
                 if (xb+yb) == 0:
-                    cv2.rectangle(draw_img,(xbox_left, ytop_draw+ystart),(xbox_left+win_draw,ytop_draw+win_draw+ystart),(0,255,0),1)
+                    cv2.rectangle(draw_img,(xbox_left, ytop_draw+ystart),(xbox_left+win_draw,ytop_draw+win_draw+ystart),(0,255,0),6)
                 else:
                     cv2.rectangle(draw_img,(xbox_left, ytop_draw+ystart),(xbox_left+win_draw,ytop_draw+win_draw+ystart),(0,0,255),6)
                 bboxes.append(((xbox_left, ytop_draw+ystart), (xbox_left+win_draw,ytop_draw+win_draw+ystart)))
@@ -341,19 +379,38 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, ce
     return draw_img, bboxes
 
 
-def add_heat(heatmap, bbox_list):
+def add_heat(heat, bbox_list, weight=1):
+    heatmap = np.copy(heat)
     # Iterate through list of bboxes
     for box in bbox_list:
         # Add += 1 for all pixels inside each bbox
         # Assuming each "box" takes the form ((x1, y1), (x2, y2))
-        heatmap[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 1
+        heatmap[box[0][1]:box[1][1], box[0][0]:box[1][0]] += weight
 
     # Return updated heatmap
     return heatmap# Iterate through list of bboxes
 
-def apply_threshold(heatmap, threshold):
+def apply_threshold(heatmap, threshold, ystart=400, ystop=650, xstart=0, xstop=1280, strideX=32, strideY=32, filtering=False, kernel=(32,32)):
+    if filtering is False:
+        # Zero out pixels below the threshold
+        heatmap[heatmap < threshold] = 0
+        return heatmap
+    else:
+        imshape = heatmap.shape
+        for y in np.arange(ystart,ystop,strideY):
+            for x in np.arange(xstart,xstop,strideX):
+                if (x+kernel[0]) < xstop and (y+kernel[1]) < ystop :
+                    subImage = heatmap[y:y+kernel[1],x:x+kernel[0]]
+                    maxvalue = np.max(subImage)
+                    heatmap[y:y+kernel[1],x:x+kernel[0]] = maxvalue
+
+        heatmap[heatmap < threshold] = 0
+        # Return thresholded map
+        return heatmap
+
+def binary_image(heatmap):
     # Zero out pixels below the threshold
-    heatmap[heatmap <= threshold] = 0
+    heatmap[heatmap >= 1] = 255
     # Return thresholded map
     return heatmap
 
@@ -373,4 +430,42 @@ def draw_labeled_bboxes(img, labels):
         bboxes.append(( bbox[0], bbox[1]))
     # Return the image
     return img, bboxes
+
+
+def defineSearchAreas(ystart, ystop, xstart, xstop, windowSizeX, windowSizeY, strideX, strideY, searchWindows=[]):
+    for y in np.arange(ystart,ystop,strideY):
+        for x in np.arange(xstart,xstop,strideX):
+            win = ( (x,y) , (x+windowSizeX, y+windowSizeY))
+            if (x+windowSizeX <= xstop) and (y+windowSizeY <= ystop):
+                searchWindows.append(win)
+    return searchWindows
+
+def find_cars_in_searchWindows(img,searchWindows, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins, bboxes = []):
+    draw_img = np.copy(img)
+    for i in range(len(searchWindows)):
+        win = searchWindows[i]
+        (xstart, ystart) = win[0]
+        (xstop, ystop) = win[1]
+
+        #image = img[ystart:ystop,xstart:xstop,:]
+        image = cv2.resize(img[ystart:ystop,xstart:xstop,:], (64,64))
+        features =  single_img_features(image, color_space='RGB', spatial_size=spatial_size,
+                hist_bins=hist_bins, orient=orient, pix_per_cell=pix_per_cell, cell_per_block=cell_per_block, hog_channel='ALL',
+                        spatial_feat=True, hist_feat=True, hog_feat=True)
+
+        # Scale features and make a prediction
+        #test_features = X_scaler.transform(features)
+        test_features = X_scaler.transform(np.array(features).reshape(1, -1))
+        test_prediction = svc.predict(test_features)
+
+        cv2.rectangle(draw_img, win[0],win[1],(0,255,0),1)
+        if i == 0:
+            cv2.rectangle(draw_img, win[0],win[1],(0,255,0),3)
+        if test_prediction == 1:
+            cv2.rectangle(draw_img, win[0],win[1],(0,0,255),6)
+            bboxes.append(( win[0], win[1]))
+
+
+
+    return draw_img, bboxes
 

@@ -21,7 +21,7 @@ import os
 
 ### DONE: Tweak these parameters and see how the results change.
 colorspace = 'YUV' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
-spatial = 16
+spatial = 32
 histbin = 32
 orient = 9
 pix_per_cell = 16
@@ -34,40 +34,46 @@ with open("model.pickle", "rb") as f:
     (svc,X_scaler) = pickle.load(f)
 
 
+cache_fit = []
+
 prev_bboxes = []
+prev_bboxes_1 = []
+prev_bboxes_2 = []
+prev_bboxes_3 = []
+prev_bboxes_4 = []
 
-def find_vehicles_in_image(image, no_vis=True):
-    global prev_bboxes
+N = 4
+
+def find_vehicles_in_image2(image, no_vis=True):
+    global N, cache_fit, prev_bboxes, prev_bboxes_1, prev_bboxes_2, prev_bboxes_3, prev_bboxes_4
     bboxes = []
-    #Medium Cars
-    out_img1, bboxes = find_cars(image, 410, 530, 1.5, svc, X_scaler, orient, pix_per_cell, cell_per_block, (spatial, spatial),
-                    histbin, bboxes=bboxes, cells_per_step = 1, window=64)
-    #Small Cars
-    out_img2, bboxes = find_cars(image, 390, 440, 0.25, svc, X_scaler, orient, pix_per_cell, cell_per_block, (spatial, spatial),
-                    histbin, bboxes=bboxes, cells_per_step = 2)
-    #out_img, bboxes = find_cars(image, 400, 500, 0.5, svc, X_scaler, orient, pix_per_cell, cell_per_block, (spatial, spatial),
-    #                histbin, bboxes=bboxes)
 
+    searchWindows = []
     heat = np.zeros_like(image[:,:,0]).astype(np.float)
-
-    #Consider the detections from the previous frame too
-    #for bbox in prev_bboxes:
-    #    bboxes.append(bbox)
+    searchWindows1 = defineSearchAreas(400, 528, 400, 1180, 128, 128, 128, 128, searchWindows)
+    out_img1, bboxes = find_cars_in_searchWindows(image, searchWindows1, svc, X_scaler, orient, pix_per_cell, cell_per_block, (spatial, spatial), histbin, bboxes)
+    # Add heat to each box in box list
+    heat_img = add_heat(heat,bboxes, weight=1)
+    # Apply threshold to help remove false positives
+    apply_threshold(heat_img,2)
 
     # Add heat to each box in box list
-    heat_img = add_heat(heat,bboxes)
-    heat_img = add_heat(heat_img,prev_bboxes)
-
+    # Add heat to each box in box list
+    for idx, bb in enumerate(cache_fit):
+        heat_img = add_heat(heat_img, bb, weight=6-idx)
     # Apply threshold to help remove false positives
-    heat = apply_threshold(heat_img,2)
+    apply_threshold(heat_img,3)
 
+    heat_img[heat_img >= 1] = 255
     # Visualize the heatmap when displaying
     heatmap = np.clip(heat, 0, 255)
 
     # Find final boxes from heatmap using label function
     labels = label(heatmap)
     draw_img, bboxes = draw_labeled_bboxes(np.copy(image), labels)
-    prev_bboxes = bboxes
+    cache_fit.insert(0, bboxes)
+    if len(cache_fit) > N:
+        cache_fit.pop(-1)
 
     if no_vis is False:
         fig = plt.figure()
@@ -79,14 +85,85 @@ def find_vehicles_in_image(image, no_vis=True):
         plt.title('Heat Map')
         #fig.tight_layout()
 
+    #color_img = cv2.cvtColor(heatmap, cv2.COLOR_GRAY2RGB)
     #return draw_boxes(image, bboxes)
-    #return out_img
+    return out_img1
+    #return heat_img
+    #return draw_img
+    #return color_img
+
+
+def find_vehicles_in_image(image, no_vis=True):
+    global N, cache_fit, prev_bboxes, prev_bboxes_1, prev_bboxes_2, prev_bboxes_3, prev_bboxes_4
+    bboxes = []
+
+    dbg = np.zeros_like(image[:,:,:])
+    heat = np.zeros_like(image[:,:,0]).astype(np.float)
+    #Near Cars
+    out_img1, bboxes = find_cars(image, 400, 540, 0, 1280, 1.5, svc, X_scaler, orient, pix_per_cell, cell_per_block, (spatial, spatial),
+                    histbin, bboxes=[], cells_per_step = 1)
+    # Add heat to each box in box list
+    heat_img = add_heat(heat,bboxes, weight=40)
+    # Apply threshold to help remove false positives
+    apply_threshold(heat_img,80, filtering=True)
+
+
+    #Farther Cars
+    out_img2, bboxes = find_cars(image, 400, 520, 0, 1280, 0.75, svc, X_scaler, orient, pix_per_cell, cell_per_block, (spatial, spatial),
+                    histbin, bboxes=[], cells_per_step = 1)
+    # Add heat to each box in box list
+    heat_img = add_heat(heat_img, bboxes, weight=10)
+    # Apply threshold to help remove false positives
+    apply_threshold(heat_img,50, filtering=True)
+
+    # Add heat to each box in box list
+    for idx, bb in enumerate(cache_fit):
+        heat_img = add_heat(heat_img, bb, weight=6-idx)
+
+
+    apply_threshold(heat_img, 55, filtering=False)
+
+    ##Debug
+    #heat_img[heat_img>=1] = 255
+    #dbg[:,:,0] = heat_img
+    #dbg[:,:,1] = heat_img
+    #dbg[:,:,2] = heat_img
+    #return dbg #out_img1
+
+    heat_img[heat_img >= 1] = 255
+    # Visualize the heatmap when displaying
+    heatmap = np.clip(heat_img, 0, 255)
+
+
+    # Find final boxes from heatmap using label function
+    labels = label(heatmap)
+    draw_img, bboxes = draw_labeled_bboxes(np.copy(image), labels)
+
+    cache_fit.insert(0, bboxes)
+    if len(cache_fit) > N:
+        cache_fit.pop(-1)
+
+    if no_vis is False:
+        fig = plt.figure()
+        plt.subplot(121)
+        plt.imshow(draw_img)
+        plt.title('Car Positions')
+        plt.subplot(122)
+        plt.imshow(heatmap, cmap='hot')
+        plt.title('Heat Map')
+        #fig.tight_layout()
+
+    #color_img = cv2.cvtColor(heatmap, cv2.COLOR_GRAY2RGB)
+    #return draw_boxes(image, bboxes)
+    #return out_img2
     #return heat_img
     return draw_img
+    #return color_img
 
 #process the video file
 def process_image(image):
     return find_vehicles_in_image(image, no_vis=True)
+    #return find_vehicles_in_image2(image, no_vis=True)
 
 
 def main(argv):
